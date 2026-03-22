@@ -61,7 +61,7 @@ body.skin-sunset{
 /* ═══ BASE ══════════════════════════════════════════════════ */
 html,body{width:100%;height:100%;overflow:hidden;
   background:var(--bg);color:var(--text);
-  font-family:var(--fu);touch-action:none;user-select:none}
+  font-family:var(--fu);touch-action:manipulation;user-select:none}
 
 /* ═══ LAYOUT ════════════════════════════════════════════════ */
 #app{display:flex;flex-direction:column;align-items:center;height:100%;position:relative}
@@ -220,6 +220,17 @@ canvas{display:block;touch-action:none}
 }
 .touch-btn-fire:active{background:var(--accent);color:var(--bg)}
 .touch-group{display:flex;gap:10px;align-items:center}
+
+/* ═══ MUSIC TOGGLE ═══════════════════════════════════════════ */
+.music-btn{
+  position:absolute;top:18px;right:18px;z-index:2;
+  background:transparent;border:1px solid var(--dim);color:var(--dim);
+  width:38px;height:38px;border-radius:50%;cursor:pointer;
+  font-size:18px;display:flex;align-items:center;justify-content:center;
+  transition:all .15s ease;line-height:1;
+}
+.music-btn:hover{border-color:var(--text);color:var(--text)}
+.music-btn.on{border-color:var(--accent);color:var(--accent)}
 </style>
 </head>
 <body>
@@ -274,6 +285,7 @@ canvas{display:block;touch-action:none}
 
   <!-- ░░ HOME ░░ -->
   <div id="s-home" class="screen">
+    <button class="music-btn" id="b-music" title="Music Off">♪</button>
     <div class="title">NEON<span>INVADERS</span></div>
     <p class="subtitle">Defend the planet — shoot the aliens</p>
     <div class="name-wrap">
@@ -439,6 +451,87 @@ function playSound(type) {
       ufoOsc = null; ufoGain = null;
     }
   }
+}
+
+// ── MUSIC (procedural ambient – menu only) ──────────────────
+let musicOn = localStorage.getItem('ni_music') === '1';
+let MUS = null;
+
+function startMusic() {
+  if (!musicOn || MUS) return;
+  if (AC.state === 'suspended') AC.resume();
+  const master = AC.createGain();
+  master.gain.value = 0;
+  const filter = AC.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 900;
+  filter.Q.value = 1;
+  filter.connect(master);
+  master.connect(AC.destination);
+  const bass = AC.createOscillator();
+  bass.type = 'sine';
+  bass.frequency.value = 55;
+  const bassGain = AC.createGain();
+  bassGain.gain.value = 0.5;
+  bass.connect(bassGain);
+  bassGain.connect(filter);
+  bass.start();
+  const padFreqs = [110, 130.81, 164.81];
+  const pad = padFreqs.map((freq, i) => {
+    const osc = AC.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    osc.detune.value = (i - 1) * 6;
+    const g = AC.createGain();
+    g.gain.value = 0.12;
+    osc.connect(g);
+    g.connect(filter);
+    osc.start();
+    return osc;
+  });
+  const arpNotes = [220, 261.63, 329.63, 392, 440, 392, 329.63, 261.63];
+  let arpIdx = 0;
+  const arpTimer = setInterval(() => {
+    const t = AC.currentTime;
+    const o = AC.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = arpNotes[arpIdx % arpNotes.length];
+    const g = AC.createGain();
+    g.gain.setValueAtTime(0.18, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    o.connect(g);
+    g.connect(filter);
+    o.start(t);
+    o.stop(t + 0.35);
+    arpIdx++;
+  }, 400);
+  master.gain.linearRampToValueAtTime(0.07, AC.currentTime + 1);
+  MUS = { master, filter, bass, bassGain, pad, arpTimer };
+}
+
+function stopMusic() {
+  if (!MUS) return;
+  clearInterval(MUS.arpTimer);
+  MUS.master.gain.linearRampToValueAtTime(0, AC.currentTime + 0.5);
+  const nodes = MUS;
+  setTimeout(() => {
+    try { nodes.bass.stop(); nodes.pad.forEach(o => o.stop()); nodes.master.disconnect(); } catch(e) {}
+  }, 600);
+  MUS = null;
+}
+
+function toggleMusic() {
+  musicOn = !musicOn;
+  localStorage.setItem('ni_music', musicOn ? '1' : '0');
+  if (musicOn) startMusic(); else stopMusic();
+  updMusicBtn();
+}
+
+function updMusicBtn() {
+  const btn = document.getElementById('b-music');
+  btn.classList.toggle('on', musicOn);
+  btn.title = musicOn ? 'Music On' : 'Music Off';
+  btn.style.opacity = musicOn ? '1' : '0.5';
 }
 
 // ── LEADERBOARD ──────────────────────────────────────────────
@@ -1091,6 +1184,7 @@ function showScreen(id) {
   document.getElementById('tutorial').classList.add('hidden');
   document.getElementById('lives-wrap').classList.add('hidden');
   document.getElementById('touch-controls').classList.remove('active');
+  if (id === 's-home') startMusic(); else stopMusic();
 }
 
 // ── TUTORIAL ─────────────────────────────────────────────────
@@ -1162,6 +1256,7 @@ document.getElementById('tb-fire').addEventListener('touchstart', e => {
 });
 
 // ── BUTTONS ──────────────────────────────────────────────────
+document.getElementById('b-music').addEventListener('click', toggleMusic);
 document.getElementById('b-play').addEventListener('click', startGame);
 document.getElementById('b-restart').addEventListener('click', startGame);
 document.getElementById('b-home').addEventListener('click', () => {
@@ -1217,6 +1312,7 @@ document.querySelectorAll('.diff-btn').forEach(btn => {
 })();
 
 // ── BOOT ─────────────────────────────────────────────────────
+updMusicBtn();
 showScreen('s-home');
 requestAnimationFrame(() => { resize(); animatePreview(); });
 </script>
