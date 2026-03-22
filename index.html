@@ -1221,6 +1221,9 @@ function shoot() {
   playSound('shoot');
 }
 
+// ── MOBILE TAP FIX ──────────────────────────────────────────
+document.addEventListener('touchend',function(e){var b=e.target.closest('.btn,.btn-sm,.sk,.diff-btn,.music-btn');if(b){e.preventDefault();b.click();}},{passive:false});
+
 // ── INPUT ────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   keys[e.code] = true;
